@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Video Creator
+
+Transform your ideas into animated videos using AI. Simply describe what you want, and Claude AI will generate Remotion code to create professional animated videos.
+
+## Features
+
+- 🤖 **AI-Powered**: Claude Sonnet 4.5 generates Remotion code from natural language
+- ⚡ **Real-time Streaming**: Watch code generate in real-time with instant preview
+- 🎨 **Live Editor**: Edit generated code with Monaco Editor (VS Code editor)
+- 📺 **Instant Preview**: See your video in the browser with Remotion Player
+- 🔄 **Iterative**: Make changes with follow-up prompts or manual editing
+- 🌙 **Dark Mode**: Beautiful UI with light and dark mode support
+- 📱 **Responsive**: Works on desktop and mobile devices
+
+## Tech Stack
+
+- **Frontend**: Next.js 15 (App Router), React, TypeScript
+- **UI**: shadcn/ui, Tailwind CSS v4, Radix UI
+- **AI**: Anthropic Claude API (Sonnet 4.5)
+- **Video**: Remotion (programmatic video generation)
+- **Editor**: Monaco Editor
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Node.js 18+ installed
+- Anthropic API key ([get one here](https://console.anthropic.com/))
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Installation
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. **Install dependencies**:
+   ```bash
+   npm install
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+2. **Set up environment variables**:
+   ```bash
+   cp .env.local.example .env.local
+   ```
 
-## Learn More
+   Edit `.env.local` and add your Anthropic API key:
+   ```env
+   ANTHROPIC_API_KEY=your_api_key_here
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+3. **Run the development server**:
+   ```bash
+   npm run dev
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. **Open your browser**:
+   Navigate to [http://localhost:3000](http://localhost:3000)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Usage
 
-## Deploy on Vercel
+### Creating a Video
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. On the landing page, enter a description of your video
+2. Click "Generate Video" or press `Cmd+Enter` / `Ctrl+Enter`
+3. Watch the AI generate Remotion code in real-time
+4. See your video preview update automatically
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Editing and Iterating
+
+- **Manual editing**: Edit the generated code directly in Monaco Editor
+- **AI iterations**: Enter a new prompt like "Make the text bigger and add a glow effect"
+
+## Deployment
+
+### Vercel (Recommended)
+
+1. Push your code to GitHub
+2. Import project in Vercel
+3. Add `ANTHROPIC_API_KEY` environment variable
+4. Deploy
+
+## License
+
+MIT
+
+---
+
+Built with ❤️ using Claude Code and Remotion
