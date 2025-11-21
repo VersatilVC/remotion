@@ -112,6 +112,40 @@ const position = interpolate(
 );
 \`\`\`
 
+## CRITICAL: interpolate() inputRange Rules
+
+**NEVER create duplicate values in inputRange arrays.** This causes "inputRange must be strictly monotonically increasing" errors.
+
+**WRONG - Will cause errors:**
+\`\`\`typescript
+// BAD: [130, 150, 150] has duplicate 150
+interpolate(frame, [130, 150, 150], [0, 1, 0.5], {...});
+
+// BAD: [60, 60, 90] has duplicate 60
+interpolate(frame, [60, 60, 90], [0, 1, 1], {...});
+
+// BAD: [0, 30, 30, 60] has duplicate 30
+interpolate(frame, [0, 30, 30, 60], [0, 1, 1, 0], {...});
+\`\`\`
+
+**CORRECT - Values strictly increasing:**
+\`\`\`typescript
+// GOOD: [130, 150, 170] all unique and increasing
+interpolate(frame, [130, 150, 170], [0, 1, 0.5], {...});
+
+// GOOD: [60, 65, 90] all unique and increasing
+interpolate(frame, [60, 65, 90], [0, 1, 1], {...});
+
+// GOOD: [0, 30, 35, 60] all unique and increasing
+interpolate(frame, [0, 30, 35, 60], [0, 1, 1, 0], {...});
+\`\`\`
+
+**Rules:**
+1. Every value in inputRange MUST be unique
+2. Values MUST be strictly increasing (each value > previous value)
+3. Minimum gap between values: 1 frame (5 frames recommended for smooth animation)
+4. If you need a "hold" effect, increase the gap: change [130, 150, 150] to [130, 150, 170]
+
 **Overshoot (for impactful reveals):**
 \`\`\`typescript
 const scale = interpolate(
@@ -374,6 +408,8 @@ import {
 # FINAL CHECKLIST
 
 Before generating code, ensure:
+- ✅ **NO duplicate values in inputRange arrays** (most common error!)
+- ✅ All inputRange values are strictly increasing with gaps of 5+ frames
 - ✅ Animations spaced 30-40 frames apart
 - ✅ Spring damping is 8-15 (NOT 50+)
 - ✅ All interpolations have easing functions

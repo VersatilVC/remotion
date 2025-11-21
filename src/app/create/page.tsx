@@ -104,13 +104,47 @@ function CreatePageContent() {
           }
         : undefined;
 
+      // Enhanced error message with specific fix instructions
+      let errorContext = `\n\nCRITICAL ERROR - The previous code generated this error during rendering:\n"${errorMessage}"`;
+
+      // Add specific fix instructions for common errors
+      if (errorMessage.includes('inputRange must be strictly monotonically increasing')) {
+        const match = errorMessage.match(/but got \[([\d,\s]+)\]/);
+        const badArray = match ? match[1] : 'unknown';
+        errorContext += `\n\nSPECIFIC FIX REQUIRED:
+You have duplicate values in an inputRange array: [${badArray}]
+This is INVALID. Every value in inputRange MUST be unique and strictly increasing.
+
+Example fixes:
+- Change [130, 150, 150] to [130, 150, 170] (add 20 frames gap)
+- Change [60, 60, 90] to [60, 65, 90] (add 5 frames gap)
+- Change [0, 30, 30, 60] to [0, 30, 35, 60] (add 5 frames gap)
+
+FIND ALL interpolate() calls in your code and ensure NO inputRange has duplicate values.
+Each value must be at least 1 frame greater than the previous (5+ frames recommended).`;
+      } else if (errorMessage.includes('easing is not a function')) {
+        errorContext += `\n\nSPECIFIC FIX REQUIRED:
+You used an invalid easing function. Only use these SAFE patterns:
+- Easing.bezier(x1, y1, x2, y2) for custom curves
+- Easing.ease, Easing.linear, Easing.quad, Easing.cubic for presets
+NEVER use Easing.out() or Easing.inOut() - these cause errors.`;
+      } else if (errorMessage.includes('spring') || errorMessage.includes('damping')) {
+        errorContext += `\n\nSPECIFIC FIX REQUIRED:
+Spring animation error. Ensure spring() config uses valid values:
+- damping: 8-15 (NEVER use 50+)
+- stiffness: 80-120
+- mass: 0.3-1.2`;
+      }
+
+      errorContext += `\n\nREVIEW YOUR CODE CAREFULLY and fix the error. Return the corrected code.`;
+
       const response = await fetch('/api/generate-shot', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          shotDescription: `${shot.description}\n\nIMPORTANT: The previous code generated an error during rendering:\n"${errorMessage}"\n\nPlease fix this error and generate corrected code.`,
+          shotDescription: `${shot.description}${errorContext}`,
           visualElements: shot.visualElements,
           duration: shot.duration,
           shotNumber: shot.shotNumber,
@@ -249,178 +283,7 @@ function CreatePageContent() {
     }
   };
 
-  // Generate code for all shots
-  const handleGenerateAllCode = async () => {
-    setIsGeneratingCode(true);
-    setError(null);
-
-    const totalShots = shots.length;
-
-    for (let i = 0; i < shots.length; i++) {
-      const shot = shots[i];
-
-      // Build previous and next shot context for narrative flow
-      const previousShot = i > 0 ? shots[i - 1] : null;
-      const nextShot = i < shots.length - 1 ? shots[i + 1] : null;
-
-      const previousShotContext = previousShot
-        ? {
-            shotNumber: previousShot.shotNumber,
-            keyMessage: previousShot.keyMessage || '',
-            description: previousShot.description,
-          }
-        : undefined;
-
-      const nextShotContext = nextShot
-        ? {
-            shotNumber: nextShot.shotNumber,
-            keyMessage: nextShot.keyMessage || '',
-            description: nextShot.description,
-          }
-        : undefined;
-
-      // Update status to generating
-      setShots((prev) =>
-        prev.map((s) => (s.id === shot.id ? { ...s, status: 'generating' } : s))
-      );
-
-      try {
-        const response = await fetch('/api/generate-shot', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            shotDescription: shot.description,
-            visualElements: shot.visualElements,
-            duration: shot.duration,
-            shotNumber: shot.shotNumber,
-            totalShots,
-            visualTheme,
-            narrativeTheme,
-            narrativeRole: shot.narrativeRole,
-            narrativeConnection: shot.narrativeConnection,
-            keyMessage: shot.keyMessage,
-            emotionalTone: shot.emotionalTone,
-            previousShotContext,
-            nextShotContext,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to generate code for shot ${shot.shotNumber}`);
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error('No response body');
-        }
-
-        const decoder = new TextDecoder();
-        let accumulatedCode = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-
-                if (data.type === 'code') {
-                  accumulatedCode += data.content;
-                } else if (data.type === 'error') {
-                  throw new Error(data.content);
-                } else if (data.type === 'done') {
-                  // Update shot with code
-                  setShots((prev) =>
-                    prev.map((s) =>
-                      s.id === shot.id
-                        ? { ...s, code: accumulatedCode, status: 'code_ready' }
-                        : s
-                    )
-                  );
-                }
-              } catch (e) {
-                console.error('Error parsing SSE data:', e);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error(`Error generating code for shot ${shot.shotNumber}:`, err);
-        setShots((prev) =>
-          prev.map((s) =>
-            s.id === shot.id
-              ? {
-                  ...s,
-                  status: 'error',
-                  error: err instanceof Error ? err.message : 'Unknown error',
-                }
-              : s
-          )
-        );
-      }
-    }
-
-    setIsGeneratingCode(false);
-    setStep('generating');
-  };
-
-  // Render all shots sequentially
-  const handleRenderAll = () => {
-    const shotsToRender = shots.filter((s) => s.status === 'code_ready' && s.code);
-
-    if (shotsToRender.length === 0) {
-      setError('No shots ready to render');
-      return;
-    }
-
-    // Mark all as rendering
-    setShots((prev) =>
-      prev.map((s) =>
-        shotsToRender.find((sr) => sr.id === s.id) ? { ...s, status: 'rendering' } : s
-      )
-    );
-
-    setStep('rendering');
-
-    queueMultipleShots(
-      shotsToRender,
-      () => {
-        // All renders complete
-        setStep('complete');
-      },
-      (shotId, videoUrl) => {
-        // Single shot complete - reset retry count
-        shotRetryCountRef.current.delete(shotId);
-        setShots((prev) =>
-          prev.map((s) =>
-            s.id === shotId ? { ...s, status: 'complete', videoUrl } : s
-          )
-        );
-      },
-      (shotId, errorMsg, isCodeError) => {
-        // Single shot error
-        if (isCodeError) {
-          // Automatically fix and retry
-          console.log(`Detected code error in shot ${shotId}, triggering auto-fix...`);
-          handleAutoFixAndRetry(shotId, errorMsg);
-        } else {
-          // Infrastructure error - just mark as error
-          setShots((prev) =>
-            prev.map((s) =>
-              s.id === shotId ? { ...s, status: 'error', error: errorMsg } : s
-            )
-          );
-        }
-      }
-    );
-  };
+  // OLD CODE REMOVED - Using pipeline instead
 
   // Retry rendering a single failed shot
   const handleRetryRender = (shot: Shot) => {
@@ -627,44 +490,182 @@ function CreatePageContent() {
     }
   };
 
+  // Pipeline: Generate code and immediately render for each shot
+  const handleGenerateAndRenderPipeline = async () => {
+    setIsGeneratingCode(true);
+    setError(null);
+    setStep('rendering'); // Move to rendering step since we'll be doing both
+
+    const totalShots = shots.length;
+    let completedCount = 0;
+
+    for (let i = 0; i < shots.length; i++) {
+      const shot = shots[i];
+
+      // Build previous and next shot context for narrative flow
+      const previousShot = i > 0 ? shots[i - 1] : null;
+      const nextShot = i < shots.length - 1 ? shots[i + 1] : null;
+
+      const previousShotContext = previousShot
+        ? {
+            shotNumber: previousShot.shotNumber,
+            keyMessage: previousShot.keyMessage || '',
+            description: previousShot.description,
+          }
+        : undefined;
+
+      const nextShotContext = nextShot
+        ? {
+            shotNumber: nextShot.shotNumber,
+            keyMessage: nextShot.keyMessage || '',
+            description: nextShot.description,
+          }
+        : undefined;
+
+      // Update status to generating
+      setShots((prev) =>
+        prev.map((s) => (s.id === shot.id ? { ...s, status: 'generating' } : s))
+      );
+
+      try {
+        // Step 1: Generate code
+        const response = await fetch('/api/generate-shot', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            shotDescription: shot.description,
+            visualElements: shot.visualElements,
+            duration: shot.duration,
+            shotNumber: shot.shotNumber,
+            totalShots,
+            visualTheme,
+            narrativeTheme,
+            narrativeRole: shot.narrativeRole,
+            narrativeConnection: shot.narrativeConnection,
+            keyMessage: shot.keyMessage,
+            emotionalTone: shot.emotionalTone,
+            previousShotContext,
+            nextShotContext,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to generate code for shot ${shot.shotNumber}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('No response body');
+        }
+
+        const decoder = new TextDecoder();
+        let accumulatedCode = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+
+                if (data.type === 'code') {
+                  accumulatedCode += data.content;
+                } else if (data.type === 'error') {
+                  throw new Error(data.content);
+                } else if (data.type === 'done') {
+                  // Code generation complete - store code and immediately queue for render
+                  setShots((prev) =>
+                    prev.map((s) =>
+                      s.id === shot.id
+                        ? { ...s, code: accumulatedCode, status: 'rendering' }
+                        : s
+                    )
+                  );
+
+                  // Step 2: Immediately queue for render
+                  const updatedShot = { ...shot, code: accumulatedCode };
+                  queueMultipleShots(
+                    [updatedShot],
+                    () => {
+                      completedCount++;
+                      if (completedCount === totalShots) {
+                        setIsGeneratingCode(false);
+                        setStep('complete');
+                      }
+                    },
+                    (shotId, videoUrl) => {
+                      // Reset retry count on success
+                      shotRetryCountRef.current.delete(shotId);
+                      setShots((prev) =>
+                        prev.map((s) =>
+                          s.id === shotId ? { ...s, status: 'complete', videoUrl } : s
+                        )
+                      );
+                    },
+                    (shotId, errorMsg, isCodeError) => {
+                      // Handle render error
+                      if (isCodeError) {
+                        console.log(`Detected code error in shot ${shotId}, triggering auto-fix...`);
+                        handleAutoFixAndRetry(shotId, errorMsg);
+                      } else {
+                        setShots((prev) =>
+                          prev.map((s) =>
+                            s.id === shotId ? { ...s, status: 'error', error: errorMsg } : s
+                          )
+                        );
+                      }
+                      completedCount++;
+                      if (completedCount === totalShots) {
+                        setIsGeneratingCode(false);
+                        setStep('complete');
+                      }
+                    }
+                  );
+                }
+              } catch (e) {
+                console.error('Error parsing SSE data:', e);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Error generating code for shot ${shot.shotNumber}:`, err);
+        setShots((prev) =>
+          prev.map((s) =>
+            s.id === shot.id
+              ? {
+                  ...s,
+                  status: 'error',
+                  error: err instanceof Error ? err.message : 'Unknown error',
+                }
+              : s
+          )
+        );
+        completedCount++;
+        if (completedCount === totalShots) {
+          setIsGeneratingCode(false);
+          setStep('complete');
+        }
+      }
+
+      // Small delay between starting next shot's code generation
+      if (i < shots.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+  };
+
   // Unified workflow - single button to generate and render
   const canCreateVideo = step === 'storyboard' && shots.length > 0 && !isGeneratingCode && !isRendering;
   const canStitch = shots.every((s) => s.status === 'complete') && shots.length > 0;
   const isProcessing = isGeneratingCode || isRendering;
-
-  // Combined function to generate code and render automatically
-  const handleCreateVideo = async () => {
-    setStep('generating');
-    setError(null);
-
-    // Generate all code first
-    await handleGenerateAllCode();
-
-    // After code generation, automatically start rendering
-    // This will be triggered by the useEffect below
-  };
-
-  // Watch for when code generation completes, then auto-render
-  const [autoRenderTriggered, setAutoRenderTriggered] = useState(false);
-
-  useEffect(() => {
-    if (!isGeneratingCode && !isRendering && !autoRenderTriggered && shots.length > 0) {
-      const allCodeReady = shots.every((s) => s.status === 'code_ready' || s.status === 'complete' || s.status === 'error');
-      const someCodeReady = shots.some((s) => s.status === 'code_ready');
-
-      if (someCodeReady && allCodeReady && step === 'generating') {
-        setAutoRenderTriggered(true);
-        handleRenderAll();
-      }
-    }
-  }, [isGeneratingCode, shots]);
-
-  // Reset auto-render trigger when storyboard changes
-  useEffect(() => {
-    if (step === 'storyboard') {
-      setAutoRenderTriggered(false);
-    }
-  }, [step]);
 
   // Handle description update
   const handleUpdateDescription = (shotId: string, newDescription: string) => {
@@ -729,7 +730,7 @@ function CreatePageContent() {
               onDeleteShot={handleDeleteShot}
               onRegenerateShot={(shot) => setEditingShot(shot)}
               onRetryRender={handleRetryRender}
-              onApproveStoryboard={canCreateVideo ? handleCreateVideo : undefined}
+              onApproveStoryboard={canCreateVideo ? handleGenerateAndRenderPipeline : undefined}
               onGenerateAll={undefined}
               onRenderAll={undefined}
               onStitchFinal={canStitch ? handleStitchFinal : undefined}
